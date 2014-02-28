@@ -2829,10 +2829,21 @@ classdef classOutcomeAnalysis
             % censor and complication info
                 flgcensor = [OCgrp.mFlgCensor]; flgcomp = ~flgcensor; % a patient either was censored or had complication
                 
-            vol_bins = [0:5:100];
+            
             % prepare
             %OCobj.mAtlasTotal_DVH = zeros( length(OCobj.mBinsDose), length(OCobj.mBinsVol));
             %OCobj.mAtlasComp_DVH = zeros( length(OCobj.mBinsDose), length(OCobj.mBinsVol));
+            
+            
+          %  vol_bins = [0:.1:200];
+            
+            vol_bin_step = 0.05;
+            vmin = vol_bin_step;
+            vol_bins = [log10(vmin) : vol_bin_step : log10(max(OCobj.mBinsVol))+vol_bin_step];
+            vol_bins = [0, 10.^vol_bins];
+%             
+           
+            
             
             OCobj.mAtlasTotal_DVH = zeros( length(OCobj.mBinsDose), length(vol_bins));
             OCobj.mAtlasComp_DVH = zeros( length(OCobj.mBinsDose), length(vol_bins));
@@ -2850,8 +2861,9 @@ classdef classOutcomeAnalysis
                 vols(:) = 0;
                 for jj = 1:num
                     cur_vol = pt(jj).fVolAtDose( OCobj.mBinsDose(ii) );
-                    vols(jj) = cur_vol/max(pt(jj).mVolCum);
-                    vols(jj) = vols(jj).*100;
+                    vols(jj) = cur_vol;
+                   % vols(jj) = cur_vol/max(pt(jj).mVolCum);
+                   % vols(jj) = vols(jj).*100;
                 end
                 vols(vols==0) = -1; % exclude zero volume patients
                 
@@ -5362,8 +5374,8 @@ classdef classOutcomeAnalysis
             loglikelyhood95 = repmat(lowlog95,size(llmx));
             hold on;
             fig=plot(-OCobj.mLymanN,llmx,strMarker,'LineWidth',lw);
-            plot(-OCobj.mLymanN, loglikelyhood68,strcat(strMarker(1),'--'),'LineWidth',1);
-            plot(-OCobj.mLymanN, loglikelyhood95,strcat(strMarker(1),'-'),'LineWidth',1);
+%             plot(-OCobj.mLymanN, loglikelyhood68,strcat(strMarker(1),'--'),'LineWidth',1);
+            plot(-OCobj.mLymanN, loglikelyhood95,strcat(strMarker(1),'--'),'LineWidth',1);
             if length(strMarker)==1
                 strMarker = [strMarker,'*'];
             elseif strMarker(2) == '-' || strMarker(2) == '.'
@@ -5377,6 +5389,93 @@ classdef classOutcomeAnalysis
             xlabel('log_1_0(a)');
             ylabel('log likelihood per degree of freedom');
         end
+        
+            function fig=fLymanGridExactFig_n_loglikelihood(OCobj,strMarker,lw)
+            % parameters
+            if ~exist('strMarker','var')
+                strMarker = 'b-';
+            elseif ~ischar(strMarker)
+                warning('classOutcomeAnalysis:EndPointObservedFig_EUD:strMarker','strMarker is not a string, omit');
+                strMarker = 'b-';
+            end
+            if ~exist('lw','var')
+                lw = 1;
+            elseif ~isnumeric(lw)
+                warning('classOutcomeAnalysis:EndPointObservedFig_EUD:linewidth','lw is not a number, omit');
+                lw = 1;
+            end
+
+            % find the best "a"
+            [mx,loc] = max(OCobj.mLymanGrid.loglikelihood(:));
+            [~,~,loc] = ind2sub(size(OCobj.mLymanGrid.loglikelihood),loc);
+            disp(['Max llhd and log10(a): ',num2str([mx, -OCobj.mLymanN(loc)])]);
+                        
+            % plot the maximum log likelihood curve w.r.t. log10(a)
+            llmx = zeros(size(OCobj.mLymanN)); %log likelihood's max for each log10(a)
+            for kk = 1:length(llmx)
+                ll = OCobj.mLymanGrid.loglikelihood(:,:,kk);
+                llmx(kk) = max(ll(:));
+            end
+            llmx = llmx / (OCobj.mNumInGrp-2);
+            mx = mx / (OCobj.mNumInGrp-2);
+            
+            lowlog68 = mx-0.5*1/(OCobj.mNumInGrp-2);
+            lowlog95 = mx-0.5*(1.96*2)/(OCobj.mNumInGrp-2);
+             
+            [~, CI68loga] = ConfidenceInterval(OCobj.mLymanN,flipdim(llmx,1), lowlog68);
+            [~, CI95loga] = ConfidenceInterval(OCobj.mLymanN,flipdim(llmx,1), lowlog95);
+            
+% 
+%             disp(['68% log(a) CIs: ',...
+%                 num2str(-OCobj.mLymanN(loc)),...
+%                 ' [',...
+%                 num2str(CI68loga(1)),...
+%                 ', ',...
+%                 num2str(CI68loga(2)),...
+%                 ']']);
+%             disp(['95% log(a) CIs: ',...
+%                 num2str(-OCobj.mLymanN(loc)),...
+%                 ' [',...
+%                 num2str(CI95loga(1)),...
+%                 ', ',...
+%                 num2str(CI95loga(2)),...
+%                 ']']);
+            
+         disp(['68% a CIs: ',...
+                num2str(10.^(-OCobj.mLymanN(loc)),3),...
+                ' [',...
+                num2str(10.^(CI68loga(1)),3),...
+                ', ',...
+                num2str(10.^(CI68loga(2)),3),...
+                ']']);
+            disp(['95% a CIs: ',...
+                num2str(10.^(-OCobj.mLymanN(loc)),3),...
+                ' [',...
+                num2str(10.^(CI95loga(1)),3),...
+                ', ',...
+                num2str(10.^(CI95loga(2)),3),...
+                ']']);
+            
+            loglikelyhood68 = repmat(lowlog68,size(llmx));
+            loglikelyhood95 = repmat(lowlog95,size(llmx));
+            hold on;
+            fig=plot(OCobj.mLymanN,llmx,strMarker,'LineWidth',lw);
+%             plot(-OCobj.mLymanN, loglikelyhood68,strcat(strMarker(1),'--'),'LineWidth',1);
+            plot(OCobj.mLymanN, loglikelyhood95,strcat(strMarker(1),'--'),'LineWidth',1);
+            if length(strMarker)==1
+                strMarker = [strMarker,'*'];
+            elseif strMarker(2) == '-' || strMarker(2) == '.'
+                strMarker(2) = '*';
+            end
+            plot(OCobj.mLymanN(loc),mx,strMarker,'LineWidth',lw+2,'MarkerSize',10);
+            ylim([-0.43 -0.33]);
+            set(gca,'xminortick','on','yminortick','on');
+            set(gca,'box','on');
+            %set(gca,'fontsize',14);
+            xlabel('log_1_0(n)');
+            ylabel('log likelihood per degree of freedom');
+        end
+        
         function fig=fLymanGridExactFig_TD50_loglikelihood(OCobj,strMarker,lw)
             % parameters
             if ~exist('strMarker','var')
@@ -5432,8 +5531,8 @@ classdef classOutcomeAnalysis
             loglikelyhood95 = repmat(lowlog95,size(llmx));
             hold on;
             fig=plot(OCobj.mLymanGrid.TD50,llmx,strMarker,'LineWidth',lw);
-            plot(OCobj.mLymanGrid.TD50, loglikelyhood68,strcat(strMarker(1),'--'),'LineWidth',1);
-            plot(OCobj.mLymanGrid.TD50, loglikelyhood95,strcat(strMarker(1),'-'),'LineWidth',1);
+%             plot(OCobj.mLymanGrid.TD50, loglikelyhood68,strcat(strMarker(1),'--'),'LineWidth',1);
+            plot(OCobj.mLymanGrid.TD50, loglikelyhood95,strcat(strMarker(1),'--'),'LineWidth',1);
             if length(strMarker)==1
                 strMarker = [strMarker,'*'];
             elseif strMarker(2) == '-' || strMarker(2) == '.'
@@ -5503,8 +5602,8 @@ classdef classOutcomeAnalysis
             
             hold on;
             fig=plot(OCobj.mLymanGrid.m,llmx,strMarker,'LineWidth',lw);
-            plot(OCobj.mLymanGrid.m, loglikelyhood68,strcat(strMarker(1),'--'),'LineWidth',1);
-            plot(OCobj.mLymanGrid.m, loglikelyhood95,strcat(strMarker(1),'-'),'LineWidth',1);
+%             plot(OCobj.mLymanGrid.m, loglikelyhood68,strcat(strMarker(1),'--'),'LineWidth',1);
+            plot(OCobj.mLymanGrid.m, loglikelyhood95,strcat(strMarker(1),'--'),'LineWidth',1);
             if length(strMarker)==1
                 strMarker = [strMarker,'*'];
             elseif strMarker(2) == '-' || strMarker(2) == '.'
@@ -5896,32 +5995,50 @@ classdef classOutcomeAnalysis
             cm = colormap(jet(300)); cm=cm(1:256,:); %cm(end,:) = 0.5;
             imgmsk = OCobj.mAtlasTotal_DVH > 0; imgmsk=imgmsk';
             eudmx = OCobj.mBinsDose(end); eudmn = OCobj.mBinsDose(1);
+            
+            vol_bin_step = 0.05;
+            vmin = vol_bin_step;
+            vol_bins = [log10(vmin) : vol_bin_step : log10(max(OCobj.mBinsVol))+vol_bin_step];
+            vol_bins = [0, 10.^vol_bins];
+            
 
+            
             % image data 
             img=1-OCobj.mBetaCumulativeMat; img=img';
             mx = ceil(max(img(imgmsk))*256);
             img(~imgmsk) = NaN;
-            colormap(cm(1:mx,:));
+            %colormap(cm(1:mx,:));
+            colormap(cm)
             contourf(img); axis xy;
             h_cb=colorbar;
             %set(h_cb,'ylim',[0 1]);
-            %caxis([0 1]);
+            caxis([0 1]);
+            %temp
+            
 
+            
             %             set(gca,'Position',[0.05,0.05,0.8,0.9]);
             
-            set(gca,'YTick',[1:2:21]); set(gca,'YTickLabel',0:10:100);
-            %xlim = get(gca,'XLim'); % x limit
+            set(gca,'YTickLabel',round(vol_bins([10,20,30,40,50,60,70])*10)/10);
+            
+            %set(gca,'YTick',[1:2:21]); set(gca,'YTickLabel',0:10:100);
+            
+            
+            xlim = get(gca,'XLim'); % x limit
             %ylim = get(gca,'YLim'); % x limit
-            %xticklabel = 0:5:eudmx; xtick = diff(xlim)/(eudmx-eudmn)*xticklabel+xlim(1);
-            %set(gca,'XTick',xtick);
-            %set(gca,'XTickLabel',xticklabel);
+            xticklabel = 0:5:eudmx; xtick = diff(xlim)/(eudmx-eudmn)*xticklabel+xlim(1);
+            set(gca,'XTick',xtick);
+            set(gca,'XTickLabel',xticklabel);
              
+
+            
+            
             
             set(gca,'xminortick','on','yminortick','on');
             set(gca,'box','on');
-            set(gca,'fontsize',18);
-            xlabel('BED Dose [Gy_3]','fontsize',24);
-            ylabel('Volume [%]','fontsize',24);
+            %set(gca,'fontsize',18);
+            %xlabel('BED Dose [Gy_3]','fontsize',24);
+            %ylabel('Volume [%]','fontsize',24);
             %if isempty(cur_title),
              %             title('Probability that RPS rate \geq 20%','FontSize',18);              
             %else
