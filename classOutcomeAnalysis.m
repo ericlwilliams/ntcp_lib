@@ -312,7 +312,8 @@ classdef classOutcomeAnalysis
         end
         function OCobj = fCalculateVolBins(OCobj)
             vols = cellfun(@(x) x(1), {OCobj.mGrp.mVolCum}); vmax = max(vols);
-            step = vmax/200;
+            %step = vmax/200;
+            step = 0.1;
             OCobj.mBinsVol = ( 0 : step : vmax+step )';
             
             %OCobj.mBinsVol = ( 0 : OCobj.mStepVol : vmax+OCobj.mStepVol )';
@@ -2884,7 +2885,76 @@ classdef classOutcomeAnalysis
             end
         end
                 
-              
+        function OCobj = fCrudeAtlas_relVol_DVH(OCobj,nfx) % !! functionality moved to scripts/GenerateDvhAtlas.m
+            
+            % generate dose bins if mBinsDose is not specifically assigned
+            if isempty(OCobj.mBinsDose)
+                error('mBinsDose not determined before method "CrudeAtlas_EUD" is called (classOutcomeAnalysis)');
+            end
+            numdosebins=size(OCobj.mBinsDose,1);
+            
+            OCgrp = [OCobj.mGrp];
+            fx_flg = ones(length(OCgrp),1);
+            
+            if nfx>0 %nfx= -1, all fx schemes
+                
+                grp_flgs = [OCgrp.mFxNum];
+                fx_flg = grp_flgs==nfx;
+                
+                if sum(fx_flg)==0
+                    disp(['Invalid nfx arg']);
+                    return;
+                end
+                
+                OCgrp = OCgrp(fx_flg);
+                
+            end
+            
+            
+            % censor and complication info
+            flgcensor = [OCgrp.mFlgCensor]; flgcomp = ~flgcensor; % a patient either was censored or had complication
+            
+            
+            % prepare
+            OCobj.mAtlasTotal_DVH = zeros( length(OCobj.mBinsDose), length(OCobj.mBinsVol));
+            OCobj.mAtlasComp_DVH = zeros( length(OCobj.mBinsDose), length(OCobj.mBinsVol));
+            
+ 
+            
+            % assuming all have comp data
+            %f = OCobj.fPatientsWithComplicationData();
+            pt = OCgrp;
+            num = length(pt); % number of patients
+            
+            % Vx
+            vols = zeros( num, 1 );
+            for ii = 1:length(OCobj.mBinsDose)
+                % volume of each patient at current dose (x)
+                vols(:) = 0;
+                for jj = 1:num
+                    cur_vol = pt(jj).fVolAtDose( OCobj.mBinsDose(ii) );
+                    %vols(jj) = cur_vol;
+                    vols(jj) = cur_vol/max(pt(jj).mVolCum);
+                    % vols(jj) = vols(jj).*100;
+                end
+                vols(vols==0) = -1; % exclude zero volume patients
+                
+                for kk = 1:length(OCobj.mBinsVol) % for each volume point under dose x
+                    %f = find( vols >= OCobj.mBinsVol(kk) ); % patient at the grid point
+                    f = find( vols >= (OCobj.mBinsVol(kk)/max(OCobj.mBinsVol)) ); % patient at the grid point
+                    
+                    %f = find( vols >= vol_bins(kk)); % patient at the grid point
+                    g = find( flgcomp(f) );
+                    
+                    % for each time point
+                    % total patients
+                    OCobj.mAtlasTotal_DVH(ii,kk) = length(f);
+                    % patients with complications
+                    OCobj.mAtlasComp_DVH(ii,kk) = length(g);
+                end
+            end
+        end
+                  
          function OCobj = fBetaCumulativeProbability_DVH(OCobj)
             OCobj.mBetaCumulativeMat = zeros( [size(OCobj.mAtlasTotal_DVH), size(OCobj.mBetaCumulativeThreshold,1)] );
             for k = 1:size(OCobj.mBetaCumulativeThreshold,1)
@@ -5370,6 +5440,14 @@ classdef classOutcomeAnalysis
                 num2str(10.^(CI95loga(2)),3),...
                 ']']);
             
+             disp(['95% log10(a) CIs: ',...
+                num2str(-OCobj.mLymanN(loc),3),...
+                ' [',...
+                num2str(CI95loga(1),3),...
+                ', ',...
+                num2str(CI95loga(2),3),...
+                ']']);
+            
             loglikelyhood68 = repmat(lowlog68,size(llmx));
             loglikelyhood95 = repmat(lowlog95,size(llmx));
             hold on;
@@ -5408,7 +5486,7 @@ classdef classOutcomeAnalysis
             % find the best "a"
             [mx,loc] = max(OCobj.mLymanGrid.loglikelihood(:));
             [~,~,loc] = ind2sub(size(OCobj.mLymanGrid.loglikelihood),loc);
-            disp(['Max llhd and log10(a): ',num2str([mx, -OCobj.mLymanN(loc)])]);
+            disp(['Max llhd and log10(a): ',num2str([mx, OCobj.mLymanN(loc)])]);
                         
             % plot the maximum log likelihood curve w.r.t. log10(a)
             llmx = zeros(size(OCobj.mLymanN)); %log likelihood's max for each log10(a)
@@ -5441,20 +5519,28 @@ classdef classOutcomeAnalysis
 %                 num2str(CI95loga(2)),...
 %                 ']']);
             
-         disp(['68% a CIs: ',...
-                num2str(10.^(-OCobj.mLymanN(loc)),3),...
+         disp(['68% n CIs: ',...
+                num2str(10.^(OCobj.mLymanN(loc)),3),...
                 ' [',...
                 num2str(10.^(CI68loga(1)),3),...
                 ', ',...
                 num2str(10.^(CI68loga(2)),3),...
                 ']']);
-            disp(['95% a CIs: ',...
-                num2str(10.^(-OCobj.mLymanN(loc)),3),...
+            disp(['95% n CIs: ',...
+                num2str(10.^(OCobj.mLymanN(loc)),3),...
                 ' [',...
                 num2str(10.^(CI95loga(1)),3),...
                 ', ',...
                 num2str(10.^(CI95loga(2)),3),...
                 ']']);
+                disp(['95% n CIs: ',...
+                num2str(OCobj.mLymanN(loc),3),...
+                ' [',...
+                num2str(CI95loga(1),3),...
+                ', ',...
+                num2str(CI95loga(2),3),...
+                ']']);
+            
             
             loglikelyhood68 = repmat(lowlog68,size(llmx));
             loglikelyhood95 = repmat(lowlog95,size(llmx));
@@ -6017,12 +6103,13 @@ classdef classOutcomeAnalysis
             
 
             
-            %             set(gca,'Position',[0.05,0.05,0.8,0.9]);
-            
+            % for Esophagitis
             set(gca,'YTickLabel',round(vol_bins([10,20,30,40,50,60,70])*10)/10);
+             
+            % for BPx
+            %set(gca,'YTickLabel',round(vol_bins([10,20,30,40,50,60])*10)/10);
             
-            %set(gca,'YTick',[1:2:21]); set(gca,'YTickLabel',0:10:100);
-            
+ 
             
             xlim = get(gca,'XLim'); % x limit
             %ylim = get(gca,'YLim'); % x limit
@@ -6046,7 +6133,67 @@ classdef classOutcomeAnalysis
             %end           
         end
         
-        
+         function fProbabilityFig_relVol_DVH(OCobj,cur_title)
+            % map of the probability of have complication rate of at least value (e.g. 20%)
+            if isempty(OCobj.mBetaCumulativeMat)
+                disp('Empty member (BetaCumulativeMat), can not display its figure.'); return;
+            end
+
+            % prepare
+            cm = colormap(jet(300)); cm=cm(1:256,:); %cm(end,:) = 0.5;
+            imgmsk = OCobj.mAtlasTotal_DVH > 0; imgmsk=imgmsk';
+            eudmx = OCobj.mBinsDose(end); eudmn = OCobj.mBinsDose(1);
+            
+%             vol_bin_step = 0.05;
+%             vmin = vol_bin_step;
+%             vol_bins = [log10(vmin) : vol_bin_step : log10(max(OCobj.mBinsVol))+vol_bin_step];
+%             vol_bins = [0, 10.^vol_bins];
+            
+            %vol_bins = OCobj.mBinsVol./max(OCobj.mBinsVol);
+            
+            % image data 
+            img=1-OCobj.mBetaCumulativeMat; img=img';
+            mx = ceil(max(img(imgmsk))*256);
+            img(~imgmsk) = NaN;
+            %colormap(cm(1:mx,:));
+            colormap(cm)
+            contourf(img); axis xy;
+            h_cb=colorbar;
+            %set(h_cb,'ylim',[0 1]);
+            caxis([0 1]);
+            %temp
+            
+
+            
+            % for Esophagitis
+%            set(gca,'YTickLabel',round(vol_bins([10,20,30,40,50,60,70])*10)/10);
+             
+            % for BPx
+            %set(gca,'YTickLabel',round(vol_bins([10,20,30,40,50,60])*10)/10);
+            set(gca,'YTickLabel',[10:10:100]');
+ 
+            
+            xlim = get(gca,'XLim'); % x limit
+            %ylim = get(gca,'YLim'); % x limit
+            xticklabel = 0:5:eudmx; xtick = diff(xlim)/(eudmx-eudmn)*xticklabel+xlim(1);
+            set(gca,'XTick',xtick);
+            set(gca,'XTickLabel',xticklabel);
+             
+
+            
+            
+            
+            set(gca,'xminortick','on','yminortick','on');
+            set(gca,'box','on');
+            %set(gca,'fontsize',18);
+            %xlabel('BED Dose [Gy_3]','fontsize',24);
+            %ylabel('Volume [%]','fontsize',24);
+            %if isempty(cur_title),
+             %             title('Probability that RPS rate \geq 20%','FontSize',18);              
+            %else
+            %title([cur_title,10,'Probability that RPS rate \geq 20%'],'FontSize',18);              
+            %end           
+        end
         
         function fProbabilityFig_EUD(OCobj,cur_title)
             % map of the probability of have complication rate of at least value (e.g. 20%)
